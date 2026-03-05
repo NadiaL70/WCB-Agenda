@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WCB 2026 Interactive Agenda</title>
+    <style>
+        :root {
+            --header-bg: #0f172a;
+            --time-col-width: 85px;
+            --date-col-width: 100px;
+            --row-height: 30px; 
+            --border: #e2e8f0;
+            --text: #1e293b;
+            --highlight: #3b82f6;
+        }
+
+        body { font-family: 'Inter', system-ui, sans-serif; margin: 0; background: #f8fafc; color: var(--text); padding-bottom: 50px; }
+        
+        .nav-tabs { 
+            position: sticky; top: 0; z-index: 1000; 
+            background: white; display: flex; justify-content: center; 
+            padding: 15px; gap: 10px; border-bottom: 1px solid var(--border);
+        }
+        .tab-btn { 
+            padding: 10px 20px; border: 1px solid var(--border); 
+            background: white; border-radius: 20px; cursor: pointer; font-weight: 600;
+        }
+        .tab-btn.active { background: var(--highlight); color: white; border-color: var(--highlight); }
+
+        .agenda-view { display: none; padding: 20px; overflow: auto; max-height: 85vh; }
+        .agenda-view.active { display: block; }
+
+        .grid-container {
+            display: grid;
+            /* Time Slot + Date + 16 Rooms = 18 Columns */
+            grid-template-columns: var(--time-col-width) var(--date-col-width) repeat(16, minmax(220px, 1fr));
+            grid-template-rows: 60px repeat(60, var(--row-height));
+            background: white;
+            border: 1px solid var(--border);
+        }
+
+        .room-header {
+            position: sticky; top: 0; z-index: 100;
+            background: var(--header-bg); color: white;
+            display: flex; align-items: center; justify-content: center;
+            text-align: center; font-size: 0.8rem; font-weight: bold;
+            border: 1px solid #334155; padding: 5px;
+        }
+
+        .time-label {
+            position: sticky; left: 0; z-index: 50;
+            background: #f1f5f9; font-size: 0.75rem; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            border-bottom: 1px solid var(--border); border-right: 2px solid var(--highlight);
+        }
+
+        .session {
+            margin: 2px; padding: 8px; border-radius: 4px; font-size: 0.75rem;
+            border: 1px solid rgba(0,0,0,0.1); cursor: pointer;
+            display: flex; flex-direction: column; overflow: hidden;
+            transition: all 0.2s; line-height: 1.2;
+        }
+        .session:hover { transform: scale(1.01); z-index: 200; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .session.blank-track { background: white; border: 2px dashed #cbd5e1; color: #64748b; }
+        .session-title { font-weight: 800; margin-bottom: 4px; }
+        .session-track { font-size: 0.65rem; text-transform: uppercase; margin-top: 4px; opacity: 0.7; }
+
+        .highlight-axis { background: #dbeafe !important; color: #1e40af !important; }
+
+        @media (max-width: 1024px) {
+            .grid-container { grid-template-columns: 70px 0px repeat(16, 200px); }
+        }
+    </style>
+</head>
+<body>
+
+<div class="nav-tabs" id="tabBar"></div>
+<div id="agendaContent"></div>
+<script>
+const rawData = [
+    { name: "Women in Biomechanics Wikipedia Edit-a-Thon", date: "11th Jul 26", start: "09:00", end: "13:00", room: "TBC", track: "" },
+    { name: "Student Networking Welcome Lunch", date: "11th Jul 26", start: "13:00", end: "14:00", room: "TBC", track: "" },
+    { name: "OA8 - Movement Adaptations and Knee Function Control", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 110", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "OA9 - Clinical Outcome Prediction", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 223-224", track: "Emerging Areas" },
+    { name: "OA10 - Contrast-Enhanced Imaging", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 217-219", track: "Imaging and Biomedical Devices: Imaging Fundamentals and Applied Research" },
+    { name: "OA11 - Tissue Engineered Disease Models", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 221-222", track: "Tissue Engineering: Methods, Models and Applications" },
+    { name: "OA12 - Comparative Neuromuscular Function", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 220", track: "Comparative Biomechanics" },
+    { name: "OA13 - Muscle Biomechanics – Locomotion and Neuromuscular System", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 208-209", track: "Orthopaedic Biomechanics: Sports Medicine" },
+    { name: "ES3 - Considerations for Designing Engineering Solutions for Diverse Human Use – How Does Truth and Reconciliation and Inclusion efforts fit in?", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 215-216", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "OA1 - Neuromechanics", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA2 - Escaping the Laboratory 1: Markerless Gait Analysis", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA3 - Footwear Session 1", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA4 - Aneurysms", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Materials and Devices" },
+    { name: "OA5 - Imaging-Based Musculoskeletal Biomechanics", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA6 - Field Measurements of Injury", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 205-207", track: "Injury Biomechanics" },
+    { name: "OA7 - Characterization of Organ and Tissue Biomechanics, In Vivo and In Vitro", date: "11th Jul 26", start: "14:30", end: "15:30", room: "Room 109", track: "Organ and Tissue Biomechanics" },
+    { name: "Coffee Break", date: "11th Jul 26", start: "15:30", end: "16:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA21 - Spine and Upper Body Joint Motion", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 110", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "OA22 - Bioinspired Design and Physics-Informed Machine Learning", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 223-224", track: "Emerging Areas" },
+    { name: "OA23 - In Vivo Spine Biomechanics", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 217-219", track: "Orthopaedic Biomechanics: Spine" },
+    { name: "OA24 - AI & Computational Modeling", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 221-222", track: "Orthopaedic Biomechanics: Upper Extremities" },
+    { name: "OA25 - Life Support Systems/Devices", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 220", track: "Imaging and Biomedical Devices: Artificial Organs, Devices" },
+    { name: "OA26 - Cilia and Fagella", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 208-209", track: "Micro/Biofluidics: In Silico Models and Simulation" },
+    { name: "ES4 - Empowerment in Motion: Advancing Biomechanics Through Inclusive Mentorship", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 215-216", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "OA14 - Clinical Practice - Upper Extremity", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA15 - Escaping the Laboratory 2: Gait Analysis With Wearable Sensors", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA16 - Footwear Session 2", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA17 - Atherosclerosis", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA18 - Clinical and Translational Biomechanics", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA19 - Experimental Modeling of Injury 1", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 205-207", track: "Injury Biomechanics" },
+    { name: "OA20 - Biomechanically-Informed Rehabilitation Interventions", date: "11th Jul 26", start: "16:00", end: "17:00", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "Opening Ceremony", date: "11th Jul 26", start: "17:15", end: "17:45", room: "Ballroom A", track: "" },
+    { name: "KN01 - Applications of Sports Injury Prevention and Performance through Biomechanics and Data Analytics", date: "11th Jul 26", start: "17:45", end: "18:30", room: "Ballroom A", track: "" },
+    { name: "Welcome Reception", date: "11th Jul 26", start: "18:30", end: "20:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "Fun Run", date: "12th Jul 26", start: "07:00", end: "07:40", room: "TBC", track: "" },
+    { name: "PL01 - Engineering Surgeries for Congenital Heart Disease", date: "12th Jul 26", start: "08:30", end: "09:15", room: "Ballroom A", track: "" },
+    { name: "PL02 - Material-Driven In-Situ Cardiovascular Regeneration: A Mechanobiological Perspective", date: "12th Jul 26", start: "08:30", end: "09:15", room: "Ballroom D", track: "" },
+    { name: "OA34 - Functional Loading and Mechanics of the Lower Extremity", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 110", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "OA35 - AI and Machine Learning for Biomechanics", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 223-224", track: "Emerging Areas" },
+    { name: "OA36 - In Vitro Spine Biomechanics", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 217-219", track: "Orthopaedic Biomechanics: Spine" },
+    { name: "OA37 - Imaging, Sensing & Measurement Technologies", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 221-222", track: "Orthopaedic Biomechanics: Upper Extremities" },
+    { name: "OA38 - Organoids and Organs-on-a-Chip", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 220", track: "Imaging and Biomedical Devices: Artificial Organs, Devices" },
+    { name: "OA39 - Microcirculation", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 208-209", track: "Micro/Biofluidics: In Silico Models and Simulation" },
+    { name: "ES5 - IRCOBI Session 1: Injury Biomechanics Talks Given by Members of the IRCOBI Council", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 215-216", track: "" },
+    { name: "OA27 -  Neurologic Medicine - Cerebral Palsy", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA28 - Improving Our Methods 1: Measuring Muscle-Tendon Dynamics During Gait", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA29 - Upper Extremity", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA30 - Cardiac Biomechanics #1", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA31 - Statistical Shape Modeling in Musculoskeletal Biomechanics", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA32 - Experimental Modeling of Injury II", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 205-207", track: "Injury Biomechanics" },
+    { name: "OA33 - Neuromechanics in Wearable Exoskeletons", date: "12th Jul 26", start: "09:30", end: "10:30", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "P1 - Poster Session 1", date: "12th Jul 26", start: "10:00", end: "17:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "Coffee Break and Poster Viewing Day 1", date: "12th Jul 26", start: "10:30", end: "11:30", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA47 - Knee Arthroplasty & Patellofemoral Biomechanics", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 110", track: "Orthopaedic Biomechanics: Lower Extremities" },
+    { name: "OA48 - Wearable Sensors, AI, and Advanced Analytics", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 223-224", track: "Emerging Areas" },
+    { name: "OA49 -  Computational Spine Biomechanics", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 217-219", track: "Orthopaedic Biomechanics: Spine" },
+    { name: "OA50 - Biofabrication in Tissue Engineering", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 221-222", track: "Tissue Engineering: Methods, Models and Applications" },
+    { name: "OA51 - Microfluidics I", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 220", track: "Micro/Biofluidics: Experiments" },
+    { name: "OA52 - Assistive Technologies to Support Locomotion - Part I", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 208-209", track: "Imaging and Biomedical Devices: Assistive Technologies" },
+    { name: "ES6 - Bringing Biomechanics to the People: Field-Based Measurement Across Contexts, Communities, and Populations", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 215-216", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "OA40 - Neurodegenerative Medicine - Alzheimer’s and Other Dementias", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA41 - Improving Our Methods 2: Personalization of Neuro-Musculo-Skeletal-Joint Models for Gait Analysis", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA42 - Field Assessment", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA43 - Cardiac Biomechanics #2", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA44 - Morphology and Anthropometry in Human Biomechanics", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA45 - Computational Modeling of Injury I", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 205-207", track: "Injury Biomechanics" },
+    { name: "OA46 - Biomechanics in Bionic Limbs", date: "12th Jul 26", start: "11:30", end: "12:30", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "Break", date: "12th Jul 26", start: "12:30", end: "14:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "PL03 - Modeling Fatigue Failure in Whole-Bone and Bone Tissue: Implications for the Prediction of Stress Fracture", date: "12th Jul 26", start: "14:00", end: "14:45", room: "Ballroom A", track: "" },
+    { name: "PL04 - Multiscale Biomechanics on Bone Morphogenesis and Adaptation by Remodeling: In Silico Experiments", date: "12th Jul 26", start: "14:00", end: "14:45", room: "Ballroom D", track: "" },
+    { name: "OA60 - Implant Performance: Wear, Damage, and Retrieval Analysis", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 110", track: "Orthopaedic Biomechanics: Lower Extremities" },
+    { name: "OA61 - Computer Vision Methods for Biomechanics", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 223-224", track: "Emerging Areas" },
+    { name: "OA62 - Spine Imaging and Measurement", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 217-219", track: "Orthopaedic Biomechanics: Spine" },
+    { name: "OA63 - Imaging, Sensing, and Automation for Cell and Tissue Culture", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 221-222", track: "Tissue Engineering: Methods, Models and Applications" },
+    { name: "OA64 - Cardiovascular Mechanobiology in Tissue Engineering", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 220", track: "Tissue Engineering: Mechanobiology" },
+    { name: "OA65 - Assistive Technologies to Support Locomotion - Part II", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 208-209", track: "Imaging and Biomedical Devices: Assistive Technologies" },
+    { name: "ES7 - Rigor, Repeatability, & FUN in Pediatric Biomechanics", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 215-216", track: "Clinical Biomechanics" },
+    { name: "OA53 - Neurologic Medicine - Stroke", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA54 - Improving Our Methods 3: Biomechanics Informing Artificial Intelligence for Gait Analysis", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA55 - Winter", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA56 - Cardiac Biomechanics #3", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA57 - Markerless Motion Analysis and Tracking Accuracy", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA58 - Computational Modeling of Injury II", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 205-207", track: "Injury Biomechanics" },
+    { name: "OA59 - Wearables for Rehabilitation Tracking", date: "12th Jul 26", start: "15:00", end: "16:00", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "Coffee Break and Poster Viewing Day 1", date: "12th Jul 26", start: "16:00", end: "17:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA73 - Knee Osteoarthritis: Contact Forces, Alignment, and Cartilage Change", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 110", track: "Orthopaedic Biomechanics: Lower Extremities" },
+    { name: "OA74 - Emerging Imaging Techniques for Biomechanics", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 223-224", track: "Emerging Areas" },
+    { name: "OA75 - Mechanobiology of Cancer", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 217-219", track: "Cell Biomechanics: Mechanobiology" },
+    { name: "OA76 - Injury, Rehabilitation & Clinical Biomechanics", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 221-222", track: "Orthopaedic Biomechanics: Upper Extremities" },
+    { name: "OA77 - Tissue Engineered Models for Physiology and Developmental Mechanobiology", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 220", track: "Tissue Engineering: Mechanobiology" },
+    { name: "OA78 - Biofluidic Flow", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 208-209", track: "Micro/Biofluidics: In Silico Models and Simulation" },
+    { name: "ES8 - Revisiting Priorities in Locomotion Research for Clinical Impact", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 215-216", track: "Clinical Biomechanics" },
+    { name: "OA66 - Neurologic Medicine - Limb Loss", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA67 - Exoskeleton-Assisted Gait", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA68 - Lower Extremity", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA69 - Computational Fluid Dynamics #1", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA70 - Inverse Dynamics and Subject-Specific Predictive Modeling", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA71 - Emerging Areas in Organ Biomechanics", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA72 - Biomechanics of Lower Limb Rehabilitation", date: "12th Jul 26", start: "17:00", end: "18:00", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "Student Night Out (Ticketed Event)", date: "12th Jul 26", start: "19:00", end: "22:00", room: "TBC", track: "" },
+    { name: "Fun Run", date: "13th Jul 26", start: "07:00", end: "07:40", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "PL05 - Breaking Down Bone Disease: Multidisciplinary Research Into Mechanobiological Mechanisms of Osteoporosis and Cancer Metastasis", date: "13th Jul 26", start: "08:30", end: "09:15", room: "Ballroom A", track: "" },
+    { name: "PL06 - Foot and Ankle Biomechanics for Footwear Design", date: "13th Jul 26", start: "08:30", end: "09:15", room: "Ballroom D", track: "" },
+    { name: "OA86 - Foot and Ankle Biomechanics: Morphology, Function, and Reconstruction", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 110", track: "Orthopaedic Biomechanics: Lower Extremities" },
+    { name: "OA87 - Tendon and Ligament Biomechanics", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA88 - Mechanoregulation of Immune Cells", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 217-219", track: "Cell Biomechanics: Mechanobiology" },
+    { name: "OA89 - Cardiac Valve Devices", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 221-222", track: "Cardiovascular/Cardiorespiratory Biomechanics: Materials and Devices" },
+    { name: "OA90 - Microfluidics II", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 220", track: "Micro/Biofluidics: Experiments" },
+    { name: "OA91 - Supramolecular Collagen (Fibril) Biomechanics", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 208-209", track: "Molecular Biomechanics" },
+    { name: "ES9 - Women’s Health Biomechanics: The Engineering Perspective", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 215-216", track: "Emerging Areas" },
+    { name: "OA79 - Neurologic Medicine - Cancer and Diabetes", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA80 - Gait of Individuals with Limb Loss", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA81 - Ankles and Tendons", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA82 - Computational Fluid Dynamics #2", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA83 - Ex Vivo and In Vitro Characterization of Tissue Mechanics", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA84 - Cardiovascular Biomechanics", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA85 - Movement Neuromechanics", date: "13th Jul 26", start: "09:30", end: "10:30", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "P2 - Poster Session 2", date: "13th Jul 26", start: "10:00", end: "17:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "Coffee Break and Poster Viewing Day 2", date: "13th Jul 26", start: "10:30", end: "11:30", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA99 - Hip Biomechanics: Morphology, Function, and Reconstruction", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 110", track: "Orthopaedic Biomechanics: Lower Extremities" },
+    { name: "OA100 - Computational Modeling of Fiber-Reinforced Tissues", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA101 - Mechanoregulation of Collective Phenomena", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 217-219", track: "Cell Biomechanics: Mechanobiology" },
+    { name: "OA102 - Stent Modeling", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 221-222", track: "Cardiovascular/Cardiorespiratory Biomechanics: Materials and Devices" },
+    { name: "OA103 - Comparative Locomotor Biomechanics", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 220", track: "Comparative Biomechanics" },
+    { name: "OA104 - Biomedical and Biological Systems and Applications", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 208-209", track: "Micro/Biofluidics: In Silico Models and Simulation" },
+    { name: "ES10 - Data-Driven Innovation in Para Sport: Optimizing the Athlete-Equipment Interface", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 215-216", track: "Emerging Areas" },
+    { name: "OA92 - Neurodegenerative Medicine - PD, MS, ET", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA93 - Technology Assisted Gait", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA94 - Machine Learning Predictions", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA95 - Computational Fluid Dynamics #3", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA96 - Finite Element Analysis of Bone and Joint Mechanics", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA97 - Skin Biomechanics", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA98 - Biomechanics of Musculoskeletal Rehabilitation", date: "13th Jul 26", start: "11:30", end: "12:30", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "Break", date: "13th Jul 26", start: "12:30", end: "14:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "ESB Plenary & Award Session incl. Coffee Break", date: "13th Jul 26", start: "14:00", end: "17:00", room: "Ballroom A", track: "" },
+    { name: "ASB Plenary & Award Session incl. Coffee Break", date: "13th Jul 26", start: "14:00", end: "17:00", room: "Ballroom D", track: "" },
+    { name: "CSB Plenary & Award Session incl. Coffee Break", date: "13th Jul 26", start: "14:00", end: "17:00", room: "Room 211", track: "" },
+    { name: "ESB General Assembly", date: "13th Jul 26", start: "17:15", end: "18:00", room: "Ballroom A", track: "" },
+    { name: "ASB General Assembly", date: "13th Jul 26", start: "17:15", end: "18:15", room: "Ballroom D", track: "" },
+    { name: "CSB General Assembly", date: "13th Jul 26", start: "17:15", end: "18:15", room: "Room 211", track: "" },
+    { name: "ESB 50th Anniversary Reception (Sign Up Required)", date: "13th Jul 26", start: "18:00", end: "19:00", room: "Ballroom A", track: "" },
+    { name: "Fun Run", date: "14th Jul 26", start: "07:00", end: "07:40", room: "TBC", track: "" },
+    { name: "PL07 - Virtual Hearts, Real Patients: Personalizing Cardiac Models at Scale and in the Community", date: "14th Jul 26", start: "08:30", end: "09:15", room: "Ballroom A", track: "" },
+    { name: "PL08 - Science Beyond Experimental Measures: Where Simulations Meet Clinical Questions…", date: "14th Jul 26", start: "08:30", end: "09:15", room: "Ballroom D", track: "" },
+    { name: "OA112 - 3 MINUTE THESIS", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 110", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "OA113 - MSK Tissue Development", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA114 - Mechanoregulation of the ECM-Cell Crosstalk I", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 217-219", track: "Cell Biomechanics: Mechanobiology" },
+    { name: "OA115 - Cerebral Devices and Procedures", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 221-222", track: "Cardiovascular/Cardiorespiratory Biomechanics: Materials and Devices" },
+    { name: "OA116 - The World Celebrates Biomechanics: 10 Years of Outreach Through National Biomechanics Day", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 220", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "SS1 - Student1", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 208-209", track: "" },
+    { name: "ES11 - Translational Technology Pitch Competition", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 215-216", track: "" },
+    { name: "OA105 - Clinical Practice - Hip", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA106 - Cognition and Gait", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA107 - Assessment to Predict Performance", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA108 - Growth and Remodeling", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA109 - Optimization of Neuromuscular Control in Human Movement", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 202-204", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA110 - Biomechanics of Cancer and Gastric Diseases", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA111 - Neurorehabilitation Technologies", date: "14th Jul 26", start: "09:30", end: "10:30", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "P3 - Poster Session 3", date: "14th Jul 26", start: "10:00", end: "17:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "Coffee Break and Poster Viewing Day 3", date: "14th Jul 26", start: "10:30", end: "11:30", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA124 - Human-Environmental Interactions Related to Balance and Postural Control", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA125 - Bone Biomechanics", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA126 - Mechanoregulation of the ECM-Cell Crosstalk II", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 217-219", track: "Cell Biomechanics: Mechanobiology" },
+    { name: "OA127 - Carotid and Aortic Devices", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 221-222", track: "Cardiovascular/Cardiorespiratory Biomechanics: Materials and Devices" },
+    { name: "OA128 - Biomechanics in Practice: Clinical Translation, Sport Safety, and Society", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 220", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "SS2 – Student 2", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 208-209", track: "" },
+    { name: "ES12 - Not So Neutral: AI’s Hidden Bias in Biomechanics", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 215-216", track: "" },
+    { name: "OA117 - Clinical Practice - Knee OA", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA118 - Neurosensory Control of Gait", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA119 - Baseball", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA120 - Heart Valves 1", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA121 - Motor Vehicle-Related Injury", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 202-204", track: "Injury Biomechanics" },
+    { name: "OA122 - Biomechanics of Bone Metabolism and Osteoporosis", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA123 - MISSING SESSION NAME", date: "14th Jul 26", start: "11:30", end: "12:30", room: "Room 109", track: "Rehabilitation Biomechanics and Human Factors: Rehabilitation" },
+    { name: "Break", date: "14th Jul 26", start: "12:30", end: "14:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "PL09 - Powered to Perform: A Holistic and Tech-Driven Approach to Keeping Athletes in Action", date: "14th Jul 26", start: "14:00", end: "14:45", room: "Ballroom A", track: "" },
+    { name: "PL10 - Biomechanics in Orthopaedic Hallways: A Journey to Clinical Relevance", date: "14th Jul 26", start: "14:00", end: "14:45", room: "Ballroom D", track: "" },
+    { name: "OA136 - Simulating Human Balance: Advances in Musculoskeletal and Neuromechanical Modeling", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA137 - Muscle Biomechanics", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA138 - Emerging Tools to Probe Mechanobiological Processes", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 217-219", track: "Cell Biomechanics: Mechanobiology" },
+    { name: "OA139 - Arterial Devices", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 221-222", track: "Cardiovascular/Cardiorespiratory Biomechanics: Materials and Devices" },
+    { name: "OA140 - Pedagogy in Motion: Innovations in Biomechanics Education and Training", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 220", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "SS3 – Student 3", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 208-209", track: "" },
+    { name: "ES13 - Muscle Metabolism, Lower-Limb Joint Neuromechanics or Cost Function Objectives: Debating the Mechanisms Behind the Elevated Metabolic Cost of Walking in Aging", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 215-216", track: "" },
+    { name: "OA129 - Clinical Practice ACL 1", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA130 - Gait and Falls in Older Adults", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA131 - Cycling and Golf", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA132 - Heart Valves 2", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA133 - Concussion/Brain Injury 1", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 202-204", track: "Injury Biomechanics" },
+    { name: "OA134 - Liver Biomechanics", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA135 - Imaging Advancements for Joint Motion", date: "14th Jul 26", start: "15:00", end: "16:00", room: "Room 109", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "Coffee Break and Poster Viewing Day 3", date: "14th Jul 26", start: "16:00", end: "17:00", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA148 - Technological Advances for Monitoring and Enhancing Balance: from Wearables and AI to Virtual Reality", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA149 - Articular Cartilage Biomechanics", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA150 - Pathophysiology of Occupational Upper Extremity Disorders", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 217-219", track: "Rehabilitation Biomechanics and Human Factors: Occupational Biomechanics" },
+    { name: "OA151 - Tendon and Ligament Repair", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 221-222", track: "Orthopaedic Biomechanics: Trauma and Repair" },
+    { name: "OA152 - Modeling Cellular Biological Systems", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 220", track: "Cell Biomechanics: Methods and Models" },
+    { name: "ASME1", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 208-209", track: "" },
+    { name: "ES14 - Biomechanics in the Orthopaedic Clinic: An Interactive Panel on Opportunities and Barriers", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 215-216", track: "" },
+    { name: "OA141 - Clinical Practice - ACL 2", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA142 - Running", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA143 - Breast Health in Athletes", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA144 - Image Based Cardiovascular Biomechanics", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA145 - Concussion/Brain Injury II", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 202-204", track: "Injury Biomechanics" },
+    { name: "OA146 - Vascular Mechanics", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 205-207", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA147 - Running Biomechanics and Tissue Loading", date: "14th Jul 26", start: "17:00", end: "18:00", room: "Room 109", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "Congress Dinner (Ticketed Event)", date: "14th Jul 26", start: "19:30", end: "22:00", room: "TBC", track: "" },
+    { name: "Fun Run", date: "15th Jul 26", start: "07:00", end: "07:40", room: "TBC", track: "" },
+    { name: "PL11 - Beyond the Lab: Harnessing Wearables for Clinical and Community-based Functional Outcomes", date: "15th Jul 26", start: "08:30", end: "09:15", room: "Ballroom A", track: "" },
+    { name: "PL12 - Mechanics and Dynamics in the Aging and Rejuvenation of Mammalian Oocytes", date: "15th Jul 26", start: "08:30", end: "09:15", room: "Ballroom D", track: "" },
+    { name: "OA160 - Developmental and Age-Related Changes in the Dynamics of Balance and Posture", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA161 - Intervertebral Disc and Labrum Mechanics", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 223-224", track: "Musculoskeletal Biomechanics: Tissues" },
+    { name: "OA162 - Occupational Biomechanics of the Spine", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 217-219", track: "Rehabilitation Biomechanics and Human Factors: Occupational Biomechanics" },
+    { name: "OA163 - Joint and Muscle Health", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 221-222", track: "Orthopaedic Biomechanics: Trauma and Repair" },
+    { name: "OA164 - Computational Methods in Cell Mechanics", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 220", track: "Cell Biomechanics: Methods and Models" },
+    { name: "ASME2", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 208-209", track: "" },
+    { name: "ES15 - Hip Biomechanics Across the Lifespan: From Infancy to Adulthood", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 215-216", track: "" },
+    { name: "OA153 - Emerging Areas of Clinical Biomechanics", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA154 - Low-Gravity Gait", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA155 - Team and Water Sports", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 211", track: "Human Motion and Performance: Sports" },
+    { name: "OA156 - Image Based Cardiovascular Biomechanics", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 212-214", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA157 - Thrombosis", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 202-204", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA158 - Ocular Biomechanics", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA159 - Data-Driven Representation of Joint Motion", date: "15th Jul 26", start: "09:30", end: "10:30", room: "Room 109", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "P4 - Poster Session 4", date: "15th Jul 26", start: "10:00", end: "15:30", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "Coffee Break and Poster Viewing Day 4", date: "15th Jul 26", start: "10:30", end: "11:30", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA172 - Prevention of Injuries from Falls", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA173 - Biomechanical Imaging", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 223-224", track: "Imaging and Biomedical Devices: Imaging Fundamentals and Applied Research" },
+    { name: "OA174 - Occupational Biomechanics Technology", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 217-219", track: "Rehabilitation Biomechanics and Human Factors: Occupational Biomechanics" },
+    { name: "OA175 - Fracture Fixation and Healing", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 221-222", track: "Orthopaedic Biomechanics: Trauma and Repair" },
+    { name: "OA176 - Experimental Cell Biology with Physical Modelling", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 220", track: "Cell Biomechanics: Methods and Models" },
+    { name: "ASME3", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 208-209", track: "" },
+    { name: "ES16 - The Apab Yamaguchi Medal in Biomechanics", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 215-216", track: "" },
+    { name: "OA165 - Groundbreaking Normative Studies 1", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA166 - Energetics of Gait", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA167 - AI in Cardiovascular Biomechanics 1", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 211", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA168 - In Vivo Biomechanical Characterization", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 212-214", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA169 - Concussion/Brain Injury III", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 202-204", track: "Injury Biomechanics" },
+    { name: "OA170 - Biomechanics of the Female Reproductive System", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA171 - Developmental Bone Morphology and Joint Loading", date: "15th Jul 26", start: "11:30", end: "12:30", room: "Room 109", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "Break", date: "15th Jul 26", start: "12:30", end: "13:30", room: "Exhibit Hall - West Ballroom BC", track: "" },
+    { name: "OA184 - Assistive Devices for Enhancing Balance in Humans", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA185 - AI in Imaging 1", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 223-224", track: "Imaging and Biomedical Devices: Imaging Fundamentals and Applied Research" },
+    { name: "OA186 - Occupational Biomechanics of the Shoulder", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 217-219", track: "Rehabilitation Biomechanics and Human Factors: Occupational Biomechanics" },
+    { name: "OA187 - Orthopaedic Mechanobiology in Tissue Engineering 1", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 221-222", track: "Tissue Engineering: Mechanobiology" },
+    { name: "OA188 - Bone and Joint Biomechanics - Regeneration and Remodeling", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 220", track: "Orthopaedic Biomechanics: Sports Medicine" },
+    { name: "ES1 - Applied Biomechanics in Latin America: Outcomes that Advance Science while Supporting Communities", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 208-209", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "ES17 - Accelerating the Use of Artificial Intelligence to Analyze Human Motion: Hands-on Tutorial and Discussion", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 215-216", track: "" },
+    { name: "OA177 - Groundbreaking Normative Studies 2", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA178 - Foot and Footwear Biomechanics During Gait", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA179 - AI in Cardiovascular Biomechanics 2", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 211", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA180 - Bone Adaptation Under Mechanical Loading", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 212-214", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA181 - Military Trauma", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 202-204", track: "Injury Biomechanics" },
+    { name: "OA182 - Knee Joint and Osteoarthritis", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA183 - Joint Morphology, Pathology, and Loading", date: "15th Jul 26", start: "13:30", end: "14:30", room: "Room 109", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "OA196 - Neuromechanics of Balance and Postural Control", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 110", track: "Human Motion and Performance: Balance, Posture and Control" },
+    { name: "OA197 - AI in Imaging 2", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 223-224", track: "Imaging and Biomedical Devices: Imaging Fundamentals and Applied Research" },
+    { name: "OA198 - Computational Tools for Tissue Engineering", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 217-219", track: "Tissue Engineering: Methods, Models and Applications" },
+    { name: "OA199 - Orthopaedic Mechanobiology in Tissue Engineering 2", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 221-222", track: "Tissue Engineering: Mechanobiology" },
+    { name: "OA200 - Tendon Biomechanics – Injury and Adaptation", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 220", track: "Orthopaedic Biomechanics: Sports Medicine" },
+    { name: "ES2 - Breaking the Data Deadlock: Fast-Track Debates on Kinematic Data Sharing in Biomechanics", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 208-209", track: "Biomechanics Education, Knowledge Translation and Outreach" },
+    { name: "ES18 - Technical Challenges and New Approaches to Hand and Wrist Biomechanics: An Interactive Workshop by Hand and Wrist Biomechanics International", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 215-216", track: "" },
+    { name: "OA189 - Groundbreaking Normative Studies 3", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Ballroom A", track: "Clinical Biomechanics" },
+    { name: "OA190 - Sex Differences", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Ballroom D", track: "Human Motion and Performance: Locomotion/Gait" },
+    { name: "OA191 - AI in Cardiovascular Biomechanics 3", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 211", track: "Cardiovascular/Cardiorespiratory Biomechanics: Methods, Models and Applications" },
+    { name: "OA192 - IMU-Based Musculoskeletal Kinematics and Kinetics", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 212-214", track: "Musculoskeletal Biomechanics: Methods, Models and Applications" },
+    { name: "OA193 - Spine Biomechanics and Injury", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 202-204", track: "Injury Biomechanics" },
+{ name: "OA194 - Spine in Health and Disease", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 205-207", track: "Organ and Tissue Biomechanics" },
+    { name: "OA195 - Knee Biomechanics and Osteoarthritis", date: "15th Jul 26", start: "14:45", end: "15:45", room: "Room 109", track: "Musculoskeletal Biomechanics: Joints and Motion" },
+    { name: "CLOSING", date: "15th Jul 26", start: "16:00", end: "16:30", room: "Ballroom A", track: "" }
+];
+const rooms = [
+    "TBC", "Exhibit Hall - West Ballroom BC", "Ballroom A", "Ballroom D", 
+    "211", "212-214", "202-204", "205-207", "109", "110", "223-224", 
+    "217-219", "221-222", "220", "208-209", "215-216"
+];
+
+const trackColors = {};
+const getTrackStyle = (track) => {
+    if (!track || track.trim() === "") return 'blank-track';
+    if (!trackColors[track]) {
+        const hue = Math.floor(Math.random() * 360);
+        trackColors[track] = `hsla(${hue}, 75%, 90%, 1)`;
+    }
+    return trackColors[track];
+};
+
+function timeToRow(timeStr) {
+    try {
+        const [h, m] = timeStr.split(':').map(Number);
+        const startMins = 7 * 60; 
+        const row = Math.floor(((h * 60 + m) - startMins) / 15) + 2;
+        return row;
+    } catch(e) { return 2; }
+}
+
+function render() {
+    const dates = [...new Set(rawData.map(s => s.date))];
+    const nav = document.getElementById('tabBar');
+    const content = document.getElementById('agendaContent');
+
+    dates.forEach((date, i) => {
+        const btn = document.createElement('button');
+        btn.className = `tab-btn ${i === 0 ? 'active' : ''}`;
+        btn.innerText = date;
+        btn.onclick = () => {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.agenda-view').forEach(v => v.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById(`view-${i}`).classList.add('active');
+        };
+        nav.appendChild(btn);
+
+        const view = document.createElement('div');
+        view.id = `view-${i}`;
+        view.className = `agenda-view ${i === 0 ? 'active' : ''}`;
+        
+        const grid = document.createElement('div');
+        grid.className = 'grid-container';
+
+        // Headers
+        ["Time", "Date", ...rooms].forEach(r => {
+            const h = document.createElement('div');
+            h.className = 'room-header';
+            h.innerText = r;
+            h.dataset.room = r;
+            grid.appendChild(h);
+        });
+
+        // Time Labels
+        for(let h=7; h<=21; h++) {
+            for(let m=0; m<60; m+=15) {
+                const t = `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}`;
+                const lbl = document.createElement('div');
+                lbl.className = 'time-label';
+                lbl.innerText = t;
+                lbl.dataset.time = t;
+                lbl.style.gridRow = timeToRow(t);
+                grid.appendChild(lbl);
+            }
+        }
+
+        // Sessions
+        rawData.filter(s => s.date === date).forEach(s => {
+            const card = document.createElement('div');
+            const cleanRoom = s.room.replace('Room ', '').trim();
+            const col = rooms.indexOf(cleanRoom) + 3;
+            
+            if(col >= 3) {
+                const style = getTrackStyle(s.track);
+                card.className = `session ${style === 'blank-track' ? 'blank-track' : ''}`;
+                if(style !== 'blank-track') card.style.backgroundColor = style;
+
+                card.style.gridColumn = col;
+                card.style.gridRow = `${timeToRow(s.start)} / ${timeToRow(s.end)}`;
+                
+                card.innerHTML = `
+                    <div class="session-title">${s.name}</div>
+                    <div class="session-time">${s.start} - ${s.end}</div>
+                    ${s.track ? `<div class="session-track">${s.track}</div>` : ''}
+                `;
+
+                card.onmouseenter = () => {
+                    document.querySelectorAll(`[data-room="${cleanRoom}"]`).forEach(el => el.classList.add('highlight-axis'));
+                    document.querySelectorAll(`[data-time="${s.start}"]`).forEach(el => el.classList.add('highlight-axis'));
+                };
+                card.onmouseleave = () => {
+                    document.querySelectorAll('.highlight-axis').forEach(el => el.classList.remove('highlight-axis'));
+                };
+                
+                grid.appendChild(card);
+            }
+        });
+
+        view.appendChild(grid);
+        content.appendChild(view);
+    });
+}
+
+window.onload = render;
+</script>
+</body>
+</html>
